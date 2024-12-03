@@ -66,24 +66,19 @@ describe('server-side dev errors', () => {
 
       const stderrOutput = stripAnsi(stderr.slice(stderrIdx)).trim()
       if (isTurbopack) {
-        // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
-        expect(stderrOutput).toStartWith(
-          ' ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gsp.js (6:3) @ getStaticProps' +
-            '\n ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gsp.js (6:3) @ getStaticProps'
-        )
         expect(stderrOutput).toContain(
           ' ⨯ ReferenceError: missingVar is not defined' +
-            '\n    at getStaticProps (./test/integration/server-side-dev-errors/pages/gsp.js:6:3)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at getStaticProps (webpack'
+            '\n    at getStaticProps (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gsp.js:6:2)' +
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       } else {
         expect(stderrOutput).toStartWith(
           '⨯ ReferenceError: missingVar is not defined' +
             // TODO(veil): Should be "at getStaticProps"
             '\n    at missingVar (../../test/integration/server-side-dev-errors/pages/gsp.js:6:2)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at getStaticProps (webpack'
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       }
       expect(stderr).toContain(
@@ -120,24 +115,20 @@ describe('server-side dev errors', () => {
 
       const stderrOutput = stripAnsi(stderr.slice(stderrIdx)).trim()
       if (isTurbopack) {
-        // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
-        expect(stderrOutput).toStartWith(
-          ' ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gssp.js (6:3) @ getServerSideProps' +
-            '\n ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gssp.js (6:3) @ getServerSideProps'
-        )
         expect(stderrOutput).toContain(
           ' ⨯ ReferenceError: missingVar is not defined' +
-            '\n    at getServerSideProps (./test/integration/server-side-dev-errors/pages/gssp.js:6:3)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at'
+            // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
+            '\n    at getServerSideProps (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/gssp.js:6:2)' +
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       } else {
         expect(stderrOutput).toStartWith(
           '⨯ ReferenceError: missingVar is not defined' +
             // TODO(veil): Should be "at getServerSideProps"
             '\n    at missingVar (../../test/integration/server-side-dev-errors/pages/gssp.js:6:2)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at getServerSideProps (webpack'
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       }
       expect(stderrOutput).toContain(
@@ -174,24 +165,20 @@ describe('server-side dev errors', () => {
 
       const stderrOutput = stripAnsi(stderr.slice(stderrIdx)).trim()
       if (isTurbopack) {
-        // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
-        expect(stderrOutput).toStartWith(
-          ' ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/blog/[slug].js (6:3) @ getServerSideProps' +
-            '\n ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/blog/[slug].js (6:3) @ getServerSideProps'
-        )
         expect(stderrOutput).toContain(
           ' ⨯ ReferenceError: missingVar is not defined' +
-            '\n    at getServerSideProps (./test/integration/server-side-dev-errors/pages/blog/[slug].js:6:3)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at getServerSideProps (webpack'
+            // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
+            '\n    at getServerSideProps (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/blog/[slug].js:6:2)' +
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       } else {
         expect(stderrOutput).toStartWith(
           '⨯ ReferenceError: missingVar is not defined' +
             // TODO(veil): Should be "at getServerSideProps"
             '\n    at missingVar (../../test/integration/server-side-dev-errors/pages/blog/[slug].js:6:2)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at getServerSideProps (webpack'
+            // TODO(veil): Should be ignore-listed
+            '\n    at fn'
         )
       }
       expect(stderrOutput).toContain(
@@ -228,24 +215,20 @@ describe('server-side dev errors', () => {
 
       const stderrOutput = stripAnsi(stderr.slice(stderrIdx)).trim()
       if (isTurbopack) {
-        // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
-        expect(stderrOutput).toStartWith(
-          ' ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/hello.js (2:3) @ handler' +
-            '\n ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/hello.js (2:3) @ handler'
-        )
         expect(stderrOutput).toContain(
           ' ⨯ ReferenceError: missingVar is not defined' +
-            '\n    at handler (./test/integration/server-side-dev-errors/pages/api/hello.js:2:3)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at resolver (webpack'
+            // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
+            '\n    at handler (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/hello.js:2:2)' +
+            // TODO(veil): Should be ignore-listed
+            '\n    at async'
         )
       } else {
         expect(stderrOutput).toStartWith(
           '⨯ ReferenceError: missingVar is not defined' +
             // TODO(veil): Should be "at handler"
             '\n    at missingVar (../../test/integration/server-side-dev-errors/pages/api/hello.js:2:2)' +
-            // TODO(veil): Should be sourcemapped
-            '\n    at resolver (webpack'
+            // TODO(veil): Should be ignore-listed
+            '\n    at async'
         )
       }
       expect(stderrOutput).toContain(
@@ -283,14 +266,9 @@ describe('server-side dev errors', () => {
       const stderrOutput = stripAnsi(stderr.slice(stderrIdx)).trim()
       // FIXME(veil): error repeated
       if (isTurbopack) {
-        // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
-        expect(stderrOutput).toStartWith(
-          ' ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/blog/[slug].js (2:3) @ handler' +
-            '\n ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/blog/[slug].js (2:3) @ handler'
-        )
         expect(stderrOutput).toContain(
           ' ⨯ ReferenceError: missingVar is not defined' +
-            // TODO(veil): Should not include `turbopack://[project]`
+            // FIXME(veil): Paths include root twice. Bug in generated Turbopack sourcemaps.
             '\n    at handler (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/api/blog/[slug].js:2:2)' +
             // TODO(veil): Should be sourcemapped
             '\n    at'
@@ -348,8 +326,6 @@ describe('server-side dev errors', () => {
            8 |   }, 10)
            9 |   return {
           10 |     props: {},
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-rejection.js (7:20) @ Timeout._onTimeout
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-rejection.js (7:20) @ Timeout._onTimeout
          ⨯ unhandledRejection: Error: catch this rejection
             at Timeout._onTimeout (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-rejection.js:7:19)
            5 | export async function getServerSideProps() {
@@ -429,8 +405,6 @@ describe('server-side dev errors', () => {
            8 |   }, 10)
            9 |   return {
           10 |     props: {},
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-rejection.js (7:20) @ Timeout._onTimeout
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-rejection.js (7:20) @ Timeout._onTimeout
          ⨯ unhandledRejection: Error: 
             at Timeout._onTimeout (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-rejection.js:7:19)
            5 | export async function getServerSideProps() {
@@ -509,8 +483,6 @@ describe('server-side dev errors', () => {
            8 |   }, 10)
            9 |   return {
           10 |     props: {},
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-exception.js (7:11) @ Timeout._onTimeout
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-exception.js (7:11) @ Timeout._onTimeout
          ⨯ uncaughtException: Error: catch this exception
             at Timeout._onTimeout (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-exception.js:7:10)
            5 | export async function getServerSideProps() {
@@ -589,8 +561,6 @@ describe('server-side dev errors', () => {
            8 |   }, 10)
            9 |   return {
           10 |     props: {},
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-exception.js (7:11) @ Timeout._onTimeout
-         ⨯ ../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-exception.js (7:11) @ Timeout._onTimeout
          ⨯ uncaughtException: Error: 
             at Timeout._onTimeout (../../test/integration/server-side-dev-errors/test/integration/server-side-dev-errors/pages/uncaught-empty-exception.js:7:10)
            5 | export async function getServerSideProps() {
