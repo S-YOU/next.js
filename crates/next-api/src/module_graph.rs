@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    f32::consts::E,
     future::Future,
     hash::Hash,
     ops::Deref,
@@ -12,7 +13,7 @@ use next_core::{
 };
 use petgraph::{
     graph::{DiGraph, NodeIndex},
-    visit::{Dfs, VisitMap, Visitable},
+    visit::{Dfs, IntoNodeReferences, VisitMap, Visitable},
 };
 use serde::{Deserialize, Serialize};
 use tracing::Instrument;
@@ -25,7 +26,7 @@ use turbo_tasks::{
     ValueToString, Vc,
 };
 use turbopack_core::{
-    chunk::ChunkingType,
+    chunk::{Chunk, ChunkingType},
     context::AssetContext,
     issue::{Issue, IssueExt},
     module::{Module, Modules},
@@ -50,15 +51,26 @@ pub enum GraphTraversalAction {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TraceRawVcs)]
-pub struct SingleModuleGraphNode {
-    pub module: ResolvedVc<Box<dyn Module>>,
-    pub issues: Vec<ResolvedVc<Box<dyn Issue>>>,
-    pub layer: Option<ReadRef<RcStr>>,
+pub enum SingleModuleGraphNode {
+    Module {
+        module: ResolvedVc<Box<dyn Module>>,
+        issues: Vec<ResolvedVc<Box<dyn Issue>>>,
+        layer: Option<ReadRef<RcStr>>,
+    },
+    Chunk {
+        entries: Vec<ResolvedVc<Box<dyn Module>>>,
+    },
 }
+
 impl SingleModuleGraphNode {
     fn emit_issues(&self) {
-        for issue in &self.issues {
-            issue.emit();
+        match self {
+            SingleModuleGraphNode::Module { issues, .. } => {
+                for issue in issues {
+                    issue.emit();
+                }
+            }
+            SingleModuleGraphNode::Chunk { .. } => {}
         }
     }
 }
@@ -90,7 +102,7 @@ impl<N: TraceRawVcs, E: TraceRawVcs> Deref for TracedDiGraph<N, E> {
 #[turbo_tasks::value(cell = "new", eq = "manual", into = "new")]
 #[derive(Clone, Default)]
 pub struct SingleModuleGraph {
-    graph: TracedDiGraph<SingleModuleGraphNode, ()>,
+    graph: TracedDiGraph<SingleModuleGraphNode, Option<ChunkingType>>,
     // NodeIndex isn't necessarily stable, but these are first nodes in the graph, so shouldn't
     // ever be involved in a swap_remove operation
     //
@@ -108,7 +120,12 @@ struct ModuleSet(pub HashSet<ResolvedVc<Box<dyn Module>>>);
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 enum SingleModuleGraphBuilderNode {
+    Chunk {
+        entries: Vec<ResolvedVc<Box<dyn Module>>>,
+        idents: Vec<ReadRef<RcStr>>,
+    },
     Module {
+        chunking_type: Option<ChunkingType>,
         module: ResolvedVc<Box<dyn Module>>,
         layer: Option<ReadRef<RcStr>>,
         ident: ReadRef<RcStr>,
@@ -118,9 +135,13 @@ enum SingleModuleGraphBuilderNode {
 }
 
 impl SingleModuleGraphBuilderNode {
-    async fn new(module: ResolvedVc<Box<dyn Module>>) -> Result<Self> {
+    async fn new(
+        module: ResolvedVc<Box<dyn Module>>,
+        chunking_type: Option<ChunkingType>,
+    ) -> Result<Self> {
         let ident = module.ident();
         Ok(Self::Module {
+            chunking_type,
             module,
             layer: match ident.await?.layer {
                 Some(layer) => Some(layer.await?),
@@ -132,11 +153,13 @@ impl SingleModuleGraphBuilderNode {
     fn module(&self) -> Option<ResolvedVc<Box<dyn Module>>> {
         match self {
             SingleModuleGraphBuilderNode::Module { module, .. } => Some(*module),
-            SingleModuleGraphBuilderNode::Issues(_) => None,
+            SingleModuleGraphBuilderNode::Issues(_)
+            | SingleModuleGraphBuilderNode::Chunk { .. } => None,
         }
     }
 }
 struct SingleModuleGraphBuilderEdge {
+    // ty: Option<ChunkingType>,
     to: SingleModuleGraphBuilderNode,
 }
 struct SingleModuleGraphBuilder {}
@@ -148,7 +171,8 @@ impl Visit<SingleModuleGraphBuilderNode> for SingleModuleGraphBuilder {
     fn visit(&mut self, edge: Self::Edge) -> VisitControlFlow<SingleModuleGraphBuilderNode> {
         match edge.to {
             SingleModuleGraphBuilderNode::Module { .. } => VisitControlFlow::Continue(edge.to),
-            SingleModuleGraphBuilderNode::Issues(_) => VisitControlFlow::Skip(edge.to),
+            SingleModuleGraphBuilderNode::Issues(_)
+            | SingleModuleGraphBuilderNode::Chunk { .. } => VisitControlFlow::Skip(edge.to),
         }
     }
 
@@ -174,13 +198,14 @@ impl Visit<SingleModuleGraphBuilderNode> for SingleModuleGraphBuilder {
                     if matches!(ty, ChunkingType::Traced) {
                         None
                     } else {
-                        Some(modules.iter())
+                        Some(modules.iter().map(|m| (ty.clone(), *m)))
                     }
                 })
                 .flatten()
-                .map(|m| async move {
+                .map(|(ty, m)| async move {
                     Ok(SingleModuleGraphBuilderEdge {
-                        to: SingleModuleGraphBuilderNode::new(*m).await?,
+                        // ty: Some(ty),
+                        to: SingleModuleGraphBuilderNode::new(m, Some(ty)).await?,
                     })
                 })
                 .try_join()
@@ -196,6 +221,9 @@ impl Visit<SingleModuleGraphBuilderNode> for SingleModuleGraphBuilder {
 
     fn span(&mut self, node: &SingleModuleGraphBuilderNode) -> tracing::Span {
         match node {
+            SingleModuleGraphBuilderNode::Chunk { entries: _, idents } => {
+                tracing::info_span!("chunk", entries = display(idents[0].clone()))
+            }
             SingleModuleGraphBuilderNode::Module { ident, .. } => {
                 tracing::info_span!("module", name = display(ident))
             }
@@ -221,7 +249,8 @@ impl SingleModuleGraph {
             .iter()
             .map(|e| async move {
                 Ok(SingleModuleGraphBuilderEdge {
-                    to: SingleModuleGraphBuilderNode::new(*e).await?,
+                    // ty: None,
+                    to: SingleModuleGraphBuilderNode::new(*e, None).await?,
                 })
             })
             .try_join()
@@ -230,7 +259,7 @@ impl SingleModuleGraph {
             .skip_duplicates_with_visited_nodes(VisitedNodes(
                 visited_modules
                     .iter()
-                    .map(|&module| SingleModuleGraphBuilderNode::new(module))
+                    .map(|&module| SingleModuleGraphBuilderNode::new(module, None))
                     .try_join()
                     .await?
                     .into_iter()
@@ -250,33 +279,47 @@ impl SingleModuleGraph {
 
                 match current {
                     SingleModuleGraphBuilderNode::Module {
+                        chunking_type,
                         module,
                         layer,
                         ident: _,
                     } => {
                         if let Some(idx) = modules.get(&module) {
                             if let Some(parent_idx) = parent_idx {
-                                graph.add_edge(parent_idx, *idx, ());
+                                graph.add_edge(parent_idx, *idx, chunking_type);
                             }
                         } else {
-                            let idx = graph.add_node(SingleModuleGraphNode {
+                            let idx = graph.add_node(SingleModuleGraphNode::Module {
                                 module,
                                 issues: Default::default(),
                                 layer,
                             });
                             modules.insert(module, idx);
                             if let Some(parent_idx) = parent_idx {
-                                graph.add_edge(parent_idx, idx, ());
+                                graph.add_edge(parent_idx, idx, chunking_type);
                             }
                         }
                     }
-                    SingleModuleGraphBuilderNode::Issues(issues) => {
+                    SingleModuleGraphBuilderNode::Issues(new_issues) => {
                         let parent_idx = parent_idx.unwrap();
-                        graph
-                            .node_weight_mut(parent_idx)
-                            .unwrap()
-                            .issues
-                            .extend(issues)
+                        let node_weight = graph.node_weight_mut(parent_idx).unwrap();
+
+                        match node_weight {
+                            SingleModuleGraphNode::Module { ref mut issues, .. } => {
+                                issues.extend(new_issues);
+                            }
+                            SingleModuleGraphNode::Chunk { .. } => {
+                                unreachable!();
+                            }
+                        }
+                    }
+                    SingleModuleGraphBuilderNode::Chunk { entries, idents } => {
+                        let idx = graph.add_node(SingleModuleGraphNode::Chunk {
+                            entries: entries.clone(),
+                        });
+                        for entry in entries {
+                            graph.add_edge(idx, *modules.get(&entry).unwrap(), None);
+                        }
                     }
                 }
             }
@@ -284,13 +327,13 @@ impl SingleModuleGraph {
 
         let root_idx = root.and_then(|root| {
             if !modules.contains_key(&root) {
-                let root_idx = graph.add_node(SingleModuleGraphNode {
+                let root_idx = graph.add_node(SingleModuleGraphNode::Module {
                     module: root,
                     issues: Default::default(),
                     layer: None,
                 });
                 for entry in entries {
-                    graph.add_edge(root_idx, *modules.get(entry).unwrap(), ());
+                    graph.add_edge(root_idx, *modules.get(entry).unwrap(), None);
                 }
                 Some((root, root_idx))
             } else {
@@ -420,7 +463,10 @@ async fn get_module_graph_for_endpoint(
         .await?
         .graph
         .node_weights()
-        .map(|n| n.module)
+        .filter_map(|n| match n {
+            SingleModuleGraphNode::Module { module, .. } => Some(*module),
+            SingleModuleGraphNode::Chunk { .. } => None,
+        })
         .collect();
 
     let mut graphs = vec![graph];
@@ -435,7 +481,10 @@ async fn get_module_graph_for_endpoint(
         )
         .to_resolved()
         .await?;
-        visited_modules.extend(graph.await?.graph.node_weights().map(|n| n.module));
+        visited_modules.extend(graph.await?.graph.node_weights().filter_map(|n| match n {
+            SingleModuleGraphNode::Module { module, .. } => Some(*module),
+            SingleModuleGraphNode::Chunk { .. } => None,
+        }));
         graphs.push(graph);
     }
     let graph = SingleModuleGraph::new_with_entries_visited(
@@ -462,6 +511,27 @@ async fn get_module_graph_for_app_without_issues(
     //     _issues.iter().map(|i| i.dbg()).try_join().await?
     // );
     Ok(graph)
+}
+
+#[turbo_tasks::value]
+pub struct ChunkGraph {
+    is_single_page: bool,
+    graph: ResolvedVc<SingleModuleGraph>,
+}
+
+#[turbo_tasks::value_impl]
+impl ChunkGraph {
+    #[turbo_tasks::function]
+    pub async fn new_with_entries(
+        graph: ResolvedVc<SingleModuleGraph>,
+        is_single_page: bool,
+    ) -> Result<Vc<Self>> {
+        Ok(ChunkGraph {
+            is_single_page,
+            graph,
+        }
+        .cell())
+    }
 }
 
 #[turbo_tasks::value]
@@ -535,8 +605,12 @@ impl NextDynamicGraph {
 
                 let mut result = FxIndexMap::default();
                 graph.traverse_from_entry(entry, |node| {
-                    if let Some(node_data) = data.get(&node.module) {
-                        result.insert(node.module, node_data.clone());
+                    let SingleModuleGraphNode::Module { module, .. } = node else {
+                        return;
+                    };
+
+                    if let Some(node_data) = data.get(module) {
+                        result.insert(*module, node_data.clone());
                     }
                 })?;
                 Ok(Vc::cell(result))
@@ -554,6 +628,7 @@ impl NextDynamicGraph {
 #[turbo_tasks::value]
 pub struct ReducedGraphs {
     next_dynamic: Vec<ResolvedVc<NextDynamicGraph>>,
+    chunking: Vec<ResolvedVc<ChunkGraph>>,
     // TODO add other graphs
 }
 
@@ -623,20 +698,41 @@ async fn get_reduced_graphs_for_endpoint_inner(
         ),
     };
 
-    let next_dynamic = async move {
+    let next_dynamic = {
+        let graphs = graphs.clone();
+        async move {
+            graphs
+                .iter()
+                .map(|graph| {
+                    NextDynamicGraph::new_with_entries(
+                        **graph,
+                        is_single_page,
+                        client_asset_context,
+                    )
+                    .to_resolved()
+                })
+                .try_join()
+                .await
+        }
+        .instrument(tracing::info_span!("generating next/dynamic graphs"))
+        .await?
+    };
+
+    let chunking = async move {
         graphs
             .iter()
-            .map(|graph| {
-                NextDynamicGraph::new_with_entries(**graph, is_single_page, client_asset_context)
-                    .to_resolved()
-            })
+            .map(|graph| ChunkGraph::new_with_entries(**graph, is_single_page).to_resolved())
             .try_join()
             .await
     }
     .instrument(tracing::info_span!("generating next/dynamic graphs"))
     .await?;
 
-    Ok(ReducedGraphs { next_dynamic }.cell())
+    Ok(ReducedGraphs {
+        next_dynamic,
+        chunking,
+    }
+    .cell())
 }
 
 /// Generates a [ReducedGraph] for the given project and endpoint containing information that is
